@@ -2,12 +2,12 @@ hw1_A.py:
 
 Builds a DQN model and trains it with the env of CartPole within 500 episodes.
 
-Saves a plot for the estimated log-returns on episodes.
+Saves a plot for the sum of rewards on episodes.
 
 Parameters:
 
 --alpha: str
-Default: '0.1'
+Default: '0.01'
 Creates models for different alphas. 
 Example cmd line:
 python hw1_A.py --alpha "0.01 0.001 0.0001 0.00001"
@@ -31,8 +31,8 @@ Whether or not print the current bootstrapping step.
 
 --isVerbose: bool
 Default: False
-Whether or not show a plot of log-stats every 50 episodes.
+Whether or not show a plot of return-stats every 50 episodes.
 
 Dependencies:
-agent.py: tensorflow, numpy, random, 
-hw1_A.py: gym, agent, matplotlib, random, numpy
+agent.py: torch numpy, random, copy
+hw1_A.py: gym, agent, matplotlib, random
