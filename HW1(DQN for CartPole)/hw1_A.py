@@ -7,9 +7,15 @@ import numpy as np
 class ReplayMemory(object):
     def __init__(self):
         self.MemoryPool = []
+        self.maxLength = 10000
+        self.pointer = 0
 
     def push(self, s_old, action, s_new, reward):
-        self.MemoryPool.append([s_old, action, s_new, reward])
+        if len(self.MemoryPool) < self.maxLength:
+            self.MemoryPool.append([s_old, action, s_new, reward])
+        else:
+            self.MemoryPool[self.pointer] = [s_old, action, s_new, reward]
+            self.pointer = (self.pointer + 1) % self.maxLength
 
     def sample(self):
         return random.choice(self.MemoryPool)
@@ -17,59 +23,99 @@ class ReplayMemory(object):
 
 
 def main(args):
-    log_stats_result = []
+    all_return_train = []
+    all_return_test = []
     for i in range(len(args.alpha)):
         alpha = args.alpha[i]
-        bootstrapping_steps = 5
-        log_return = []
+        max_Time = 10000
+        step_of_target_network_update = 2
+        test_episodes = 100
         env = gym.make(args.env)
+        buffer = ReplayMemory()
         agent = DQN(num_of_actions=env.action_space.n, num_of_observations=env.observation_space.shape[0])
         agent.alpha = alpha
-        buffer = ReplayMemory()
-        if i == 0:
-            start_state = env.reset()[0]
-            cur_state = start_state
-        else:
-            cur_state = env.reset()[0]
+        bootstrapping_step = 2
+        #########
+        ######### train train train
+        return_train = []
+
         print('''Alpha={}'''.format(alpha))
         for epoch in range(args.epoch):
             # show epoch
             if(args.isEpochPrinted):
                 print('''Epoch:{}/{}'''.format(epoch+1, args.epoch))
-            # Collect Trajectories
-            cur_action = agent.forward(cur_state)
-            next_state, reward, terminal = list(env.step(cur_action))[:3]
-            reward = reward if not terminal else 0
-            buffer.push(cur_state, cur_action, next_state, reward)
-            agent.store_Q_network()
-            # Estimate Returns
-            estimated_return = np.max(agent.model.predict(np.array([start_state])).flatten())
-            # Improve Policy
-            for bt_step in range(bootstrapping_steps):
-                # show bootstrapping step
-                if(args.isBTPrinted):
-                    print('''\tBootstrapping:{}/{}'''.format(bt_step+1, bootstrapping_steps))
-                # update parameters
-                update_input = buffer.sample()
-                agent.update_Q_network(update_input)
-            # Log Statistics
-            log_return.append(np.log(estimated_return))
+            # Initialize the Sequence
+            cur_state = env.reset()[0]
+            undiscounted_reward_sum = 0
+            # Start an Episode
+            for time in range(max_Time):
+                # show time
+                if (args.isTimePrinted):
+                    print('''   Time:{}/{}'''.format(time + 1, max_Time))
+                cur_action = agent.forward(cur_state)
+                next_state, reward, terminal = list(env.step(cur_action))[:3]
+                reward = reward if not terminal else 0
+                buffer.push(cur_state, cur_action, next_state, reward)
+                # Estimate Returns
+                undiscounted_reward_sum = undiscounted_reward_sum + reward
+                # Improve Policy
+                for _ in range(bootstrapping_step):
+                    update_input = buffer.sample()
+                    agent.update_Q_network(update_input)
+                # whether terminate or not
+                if terminal:
+                    print('''   TotalTime:{}'''.format(time + 1))
+                    break
+                # update current state
+                cur_state = next_state
+                # update target network
+                if (time+1) % step_of_target_network_update == 0:
+                    agent.store_Q_network()
+            return_train.append(undiscounted_reward_sum)
+            # Verbose
             if args.isVerbose:
-                if (epoch+1)%50 == 0:
-                    plt.plot(log_return, color='blue')
+                if (epoch + 1) % 50 == 0:
+                    plt.plot(return_train, color='blue')
                     plt.xlabel('Episodes')
-                    plt.ylabel('Log Returns')
-                    plt.title('''Log Stats: Epoch {}'''.format(epoch+1))
+                    plt.ylabel('Returns')
+                    plt.title('''Return Stats: Epoch {}'''.format(epoch + 1))
                     plt.show()
-            # whether terminate or not
-            if terminal:
-                next_state = env.reset()[0]
-            # update current state
-            cur_state = next_state
+        all_return_train.append(return_train)
 
+        #print(agent.model.state_dict())
+        #exit()
+        #########
+        ######### test test test
+        # return_test = []
+        # for epoch in range(test_episodes):
+        #     # Show episodes
+        #     if (args.isEpochPrinted):
+        #         print('''Test Epoch:{}/{}'''.format(epoch + 1, test_episodes))
+        #     # Initialize the Sequence
+        #     cur_state = env.reset()[0]
+        #     undiscounted_reward_sum = 0
+        #     for time in range(max_Time):
+        #         # show time
+        #         if (args.isTimePrinted):
+        #             print('''   Time:{}/{}'''.format(time + 1, max_Time))
+        #         cur_action = agent.forward(cur_state)
+        #         next_state, reward, terminal = list(env.step(cur_action))[:3]
+        #         reward = reward if not terminal else 0
+        #         # Estimate Returns
+        #         undiscounted_reward_sum = undiscounted_reward_sum + reward
+        #         # whether terminate or not
+        #         if terminal:
+        #             print('''   TotalTime:{}'''.format(time + 1))
+        #             break
+        #         # update current state
+        #         cur_state = next_state
+        #
+        #     return_test.append(undiscounted_reward_sum)
+
+        #all_return_test.append(return_test)
         env.close()
-        log_stats_result.append(log_return)
-    return log_stats_result
+
+    return all_return_train, all_return_test
 
 if __name__ == "__main__":
     import argparse
@@ -77,26 +123,29 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", default="CartPole-v0")
     parser.add_argument("--epoch", default=500, type=int)
-    parser.add_argument("--alpha", default='0.1', type=str)
+    parser.add_argument("--alpha", default='0.01', type=str)
     parser.add_argument("--isEpochPrinted", default=True, type=bool)
-    parser.add_argument("--isBTPrinted", default=False, type=bool)
+    parser.add_argument("--isTimePrinted", default=False, type=bool)
     parser.add_argument("--isVerbose", default=False, type=bool)
 
     args = parser.parse_args()
     args.alpha = [float(temp_alpha) for temp_alpha in args.alpha.split()]
-    log_stats = main(args)
+    train_stats, test_stats = main(args)
+
+    stats = train_stats
 
     plt.clf()
     fig = plt.figure(figsize=(6,4))
     ax = fig.add_subplot(111)
-    for i in range(len(log_stats)):
-        log_return = log_stats[i]
-        ax.plot(log_return, label='''Alpha={}'''.format(args.alpha[i]))
+    for i in range(len(stats)):
+        one_return = stats[i]
+        ax.plot(one_return, label='''Alpha={}'''.format(args.alpha[i]))
     ax.set_xlabel('Episodes')
-    ax.set_ylabel('Log Returns')
-    ax.title.set_text('''Log Stats''')
+    ax.set_ylabel('Returns')
+    ax.title.set_text('''Return Stats''')
     ax.legend()
     if len(args.alpha) == 1:
-        fig.savefig('Log Stats.png', facecolor='w')
+        fig.savefig('Return Stats.png', facecolor='w')
     else:
-        fig.savefig('Log Stats with Different Alphas.png', facecolor='w')
+        fig.savefig('Return Stats with Different Alphas.png', facecolor='w')
+    plt.show()
