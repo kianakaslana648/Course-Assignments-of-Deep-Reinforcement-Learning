@@ -4,6 +4,10 @@ Builds a DQN model and trains it with the env of CartPole within 500 episodes.
 
 Saves a plot for the sum of rewards on episodes.
 
+Referred Paper:
+
+https://www.nature.com/articles/nature14236
+
 Parameters:
 
 --alpha: str
